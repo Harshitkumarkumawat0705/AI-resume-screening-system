@@ -1,0 +1,42 @@
+name: resume_analyzer_system
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: resume_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: resume_rms
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: resume_backend
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/resume_rms
+    ports:
+      - "8001:8000"
+    depends_on:
+      - db
+    restart: always
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: resume_frontend
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend
+    restart: always
+
+volumes:
+  postgres_data:

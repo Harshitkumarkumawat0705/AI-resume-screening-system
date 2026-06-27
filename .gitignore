@@ -1,0 +1,28 @@
+# Virtual environment
+.venv/
+
+# Database files
+resume_rms.db
+*.db
+*.sqlite
+
+# Uploads and temporary files
+storage/
+
+# PDF documents
+*.pdf
+
+# Frontend dependencies and builds
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+
+# Python compilation artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environment configuration files
+.env
+.env.*
