@@ -17,8 +17,9 @@ const Login = () => {
     setLoading(true);
 
     try {
+      const cleanEmail = email.trim();
       if (isLoginMode) {
-        await loginUser(email, password);
+        await loginUser(cleanEmail, password);
         const storedRole = localStorage.getItem('role') || 'candidate';
         // Redirect to recruiter/candidate dashboard based on role
         if (storedRole === 'hr') {
@@ -27,11 +28,15 @@ const Login = () => {
           window.location.href = '/candidate';
         }
       } else {
-        await registerUser(email, password, role);
-        setSuccessMessage('Registration successful! Please sign in with your credentials.');
-        setIsLoginMode(true);
-        // Clean fields
-        setPassword('');
+        await registerUser(cleanEmail, password, role);
+        // Auto-login after successful registration
+        await loginUser(cleanEmail, password);
+        const storedRole = localStorage.getItem('role') || 'candidate';
+        if (storedRole === 'hr') {
+          window.location.href = '/recruiter';
+        } else {
+          window.location.href = '/candidate';
+        }
       }
     } catch (error) {
       setErrorMessage(extractErrorMessage(error));

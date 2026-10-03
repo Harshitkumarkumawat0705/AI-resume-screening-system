@@ -4,42 +4,40 @@ from sqlmodel import SQLModel, Session, create_engine
 import sqlalchemy.exc
 
 # Database connection URL for local PostgreSQL database (supports environment overrides)
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:password@localhost:5432/resume_rms")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Default global engine variable (will be replaced if PostgreSQL fails)
-engine = create_engine(DATABASE_URL, echo=True)
+# If DATABASE_URL is set, use it. Otherwise, use SQLite.
+if DATABASE_URL:
+    engine = create_engine(DATABASE_URL, echo=True)
+else:
+    sqlite_url = "sqlite:///resume_rms.db"
+    engine = create_engine(sqlite_url, echo=True, connect_args={"check_same_thread": False})
 
 def get_session() -> Generator[Session, None, None]:
     """
     FastAPI dependency injection helper to yield a database session.
     Ensures the session is properly closed after a request is completed.
     """
-    # Use dynamic access to the global engine variable
     with Session(engine) as session:
         yield session
 
 def init_db() -> None:
     """
     Initializes the database by creating all tables defined in SQLModel metadata.
-    Falls back to SQLite if PostgreSQL connection fails.
     """
     global engine
     try:
-        # Test connection to PostgreSQL database
         with engine.connect() as conn:
             pass
         SQLModel.metadata.create_all(engine)
         run_migrations(engine)
-        print("Successfully connected and initialized PostgreSQL database.")
+        if DATABASE_URL:
+            print("Successfully connected and initialized PostgreSQL database.")
+        else:
+            print("Successfully connected and initialized SQLite database.")
     except Exception as e:
-        # Fall back to local SQLite file
-        print(f"PostgreSQL connection failed: {e}. Falling back to SQLite...")
-        sqlite_url = "sqlite:///resume_rms.db"
-        # check_same_thread=False is needed for SQLite to run in multithreaded FastAPI context
-        engine = create_engine(sqlite_url, echo=True, connect_args={"check_same_thread": False})
-        SQLModel.metadata.create_all(engine)
-        run_migrations(engine)
-        print("Successfully initialized SQLite database fallback (resume_rms.db).")
+        print(f"Database connection or initialization failed: {e}")
+        raise e
 
 def run_migrations(db_engine) -> None:
     """

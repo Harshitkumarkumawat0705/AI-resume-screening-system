@@ -6,7 +6,8 @@ import bcrypt
 import jwt
 
 # Configuration settings
-SECRET_KEY = "super-secret-key-change-in-production"
+import os
+SECRET_KEY = os.getenv("JWT_SECRET", "super-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 
@@ -74,5 +75,6 @@ def get_current_user(token: str = Depends(oauth2_scheme)) -> CurrentUser:
         if "id" not in payload or "role" not in payload:
             raise credentials_exception
         return CurrentUser(payload)
-    except jwt.PyJWTError:
+    except jwt.PyJWTError as e:
+        print(f"JWT Validation Error: {e}, Token: {token}")
         raise credentials_exception

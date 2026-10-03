@@ -5,7 +5,7 @@ from typing import List
 import uuid
 
 from fastapi import FastAPI, Depends, HTTPException, status, UploadFile, File
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select
 
@@ -13,10 +13,21 @@ from app.database import init_db, get_session
 from app.models import User, Job, Application
 from app.auth import hash_password, verify_password, create_access_token, get_current_user, CurrentUser
 from app.pipeline.engine import extract_text_from_pdf, parse_resume_details, calculate_match_and_gaps
+from supabase import create_client, Client
 
 # Configuration for file storage
 UPLOAD_DIR = "storage"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_SERVICE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
+SUPABASE_STORAGE_BUCKET = os.getenv("SUPABASE_STORAGE_BUCKET", "resumes")
+
+supabase: Client | None = None
+if SUPABASE_URL and SUPABASE_SERVICE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
+elif os.getenv("DATABASE_URL"):
+    raise RuntimeError("Production configuration error: SUPABASE_URL and SUPABASE_SERVICE_KEY are required when DATABASE_URL is set.")
 
 # Request schemas for authentication and job endpoints
 class RegisterRequest(BaseModel):
@@ -50,19 +61,24 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://[::1]:3000",
+    "http://localhost:3001",
+    "http://127.0.0.1:3001",
+    "http://[::1]:3001",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://[::1]:5173"
+]
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    origins.append(frontend_url)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://[::1]:3000",
-        "http://localhost:3001",
-        "http://127.0.0.1:3001",
-        "http://[::1]:3001",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://[::1]:5173"
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -217,8 +233,8 @@ def preview_match(
 
         # Run pipeline
         resume_text = extract_text_from_pdf(temp_file_path)
-        parsed_details = parse_resume_details(resume_text)
         required_skills_list = [s.strip() for s in job.required_skills.split(",") if s.strip()] if job.required_skills else []
+        parsed_details = parse_resume_details(resume_text, required_skills=required_skills_list)
 
         ml_results = calculate_match_and_gaps(
             resume_text=resume_text,
@@ -277,8 +293,8 @@ def apply(
 
         # Run pipeline
         resume_text = extract_text_from_pdf(file_path)
-        parsed_details = parse_resume_details(resume_text)
         required_skills_list = [s.strip() for s in job.required_skills.split(",") if s.strip()] if job.required_skills else []
+        parsed_details = parse_resume_details(resume_text, required_skills=required_skills_list)
 
         ml_results = calculate_match_and_gaps(
             resume_text=resume_text,
@@ -302,6 +318,15 @@ def apply(
         session.commit()
         session.refresh(new_application)
         success = True
+
+        if supabase:
+            with open(file_path, "rb") as f:
+                supabase.storage.from_(SUPABASE_STORAGE_BUCKET).upload(
+                    file=f,
+                    path=filename,
+                    file_options={"content-type": "application/pdf"}
+                )
+
         return new_application
     except Exception as e:
         raise HTTPException(
@@ -309,7 +334,7 @@ def apply(
             detail=f"An error occurred while processing the application: {str(e)}"
         )
     finally:
-        if not success and os.path.exists(file_path):
+        if (not success or supabase) and os.path.exists(file_path):
             os.remove(file_path)
 
 @app.get("/api/jobs/{job_id}/applicants")
@@ -407,15 +432,27 @@ def download_resume(
             detail="Resume not found for this application"
         )
         
-    file_path = os.path.join(UPLOAD_DIR, application.resume_path)
-    if not os.path.exists(file_path):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Resume file not found on server"
+    if supabase:
+        try:
+            res = supabase.storage.from_(SUPABASE_STORAGE_BUCKET).download(application.resume_path)
+            return Response(content=res, media_type="application/pdf", headers={
+                "Content-Disposition": f"attachment; filename=resume_{application_id}.pdf"
+            })
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Resume file not found on cloud storage: {e}"
+            )
+    else:
+        file_path = os.path.join(UPLOAD_DIR, application.resume_path)
+        if not os.path.exists(file_path):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Resume file not found on server"
+            )
+            
+        return FileResponse(
+            path=file_path,
+            media_type="application/pdf",
+            filename=f"resume_{application_id}.pdf"
         )
-        
-    return FileResponse(
-        path=file_path,
-        media_type="application/pdf",
-        filename=f"resume_{application_id}.pdf"
-    )

@@ -1,4 +1,4 @@
-const BASE_URL = 'http://localhost:8001';
+const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
  * Retrieves the stored JWT access token from localStorage.
@@ -31,6 +31,14 @@ const getHeaders = (includeAuth = true, isMultipart = false) => {
  */
 const handleResponse = async (response) => {
   if (!response.ok) {
+    if (response.status === 401) {
+      // Token is expired or invalid. Clear storage and redirect to login.
+      localStorage.removeItem('token');
+      localStorage.removeItem('role');
+      localStorage.removeItem('user_id');
+      window.location.href = '/';
+    }
+    
     let errorMessage = 'Something went wrong';
     try {
       const errorData = await response.json();

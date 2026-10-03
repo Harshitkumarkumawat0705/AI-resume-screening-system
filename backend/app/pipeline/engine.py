@@ -30,8 +30,8 @@ def calculate_match_and_gaps(resume_text, job_description, required_skills, cand
         skills_score = 0.0
         
     # 4. Hybrid Scoring Formula
-    # 70% weight on owning the right skills, 30% on context density alignment
-    hybrid_score = (skills_score * 0.70) + (text_sim * 0.30)
+    # 50% weight on owning the right skills, 50% on context density alignment
+    hybrid_score = (skills_score * 0.85) + (text_sim * 0.15)
     final_match_score = round(float(hybrid_score) * 100, 2)
     
     return {
@@ -41,7 +41,7 @@ def calculate_match_and_gaps(resume_text, job_description, required_skills, cand
         "debug_hard_skills_score": round(skills_score * 100, 2)
     }
 
-def parse_resume_details(raw_text):
+def parse_resume_details(raw_text, required_skills=None):
     text_lower = raw_text.lower()
     email_pattern = r'[\w\.-]+@[\w\.-]+\w+'
     email_match = re.search(email_pattern, raw_text)
@@ -51,11 +51,14 @@ def parse_resume_details(raw_text):
     phone_match = re.search(phone_pattern, raw_text)
     phone = phone_match.group(0) if phone_match else "Not Found"
 
-    skills_bank = {
-        "python", "c++", "c", "numpy", "pandas", "matplotlib", 
-        "machine learning", "manual testing", "functional testing", 
-        "ui testing", "sql", "fastapi", "react"
-    }
+    if required_skills:
+        skills_bank = set([s.strip().lower() for s in required_skills])
+    else:
+        skills_bank = {
+            "python", "c++", "c", "numpy", "pandas", "matplotlib", 
+            "machine learning", "manual testing", "functional testing", 
+            "ui testing", "sql", "fastapi", "react"
+        }
     found_skills = []
     for skill in skills_bank:
         if skill in text_lower:
